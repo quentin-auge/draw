@@ -90,21 +90,23 @@ def points_to_strokes(points):
 
 
 def get_dataset(drawings):
-    ponts_drawings = list(map(strokes_to_points, drawings))
-    ponts_drawings = sorted(ponts_drawings, key=len, reverse=True)
+    points_drawings = list(map(strokes_to_points, drawings))
+    points_drawings = sorted(points_drawings, key=len, reverse=True)
     n_drawings = len(drawings)
 
-    lens = list(map(len, ponts_drawings))
+    lens = list(map(len, points_drawings))
     max_len = max(lens)
     lens = torch.IntTensor(lens)
 
     data = torch.ones((n_drawings, max_len, 2)).float() * PADDING_VALUE
-    for i, flat_drawing in enumerate(ponts_drawings):
+    for i, flat_drawing in enumerate(points_drawings):
         data[i, :len(flat_drawing), :] = torch.Tensor(flat_drawing)
 
-    labels = data[1:]
-    data = data[:-1]
-    lens = lens[:-1]
+    labels = data[:, 1:]
+    data = data[:, :-1]
+    lens = lens - 1
+
+    print(data.shape, labels.shape, lens)
 
     return TensorDataset(data, labels, lens)
 
