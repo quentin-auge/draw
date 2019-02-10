@@ -58,8 +58,8 @@ def get_n_points(strokes):
     return n_points
 
 
-END_OF_STROKE_VALUE = -1
-PADDING_VALUE = -2
+PADDING_VALUE = -1
+END_OF_STROKE_VALUE = 1000
 
 
 def strokes_to_points(strokes):
@@ -76,7 +76,7 @@ def points_to_strokes(points):
     stroke_x, stroke_y = [], []
 
     for x, y in points:
-        if x != END_OF_STROKE_VALUE and y != END_OF_STROKE_VALUE:
+        if x <= 255 and y <= 255:
             stroke_x.append(x)
             stroke_y.append(y)
         else:

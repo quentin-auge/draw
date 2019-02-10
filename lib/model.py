@@ -4,7 +4,7 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from lib.dataset import PADDING_VALUE
+from lib.dataset import END_OF_STROKE_VALUE, PADDING_VALUE
 from lib.dataset import get_batches
 
 class LSTM(nn.Module):
@@ -38,7 +38,7 @@ class LSTM(nn.Module):
 
         output = self.output_weights(output)
 
-        output = torch.sigmoid(output) * 255
+        output = torch.sigmoid(output) * END_OF_STROKE_VALUE
 
         return output
 
