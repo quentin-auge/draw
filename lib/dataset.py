@@ -59,7 +59,7 @@ def get_n_points(strokes):
 
 
 PADDING_VALUE = -1
-END_OF_STROKE_VALUE = 1000
+END_OF_STROKE_VALUE = 260
 
 
 def strokes_to_points(strokes):

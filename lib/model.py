@@ -18,11 +18,8 @@ class LSTM(nn.Module):
         self.lstm = nn.LSTM(2, n_hidden, n_layers, dropout=dropout)
         self.output_weights = nn.Linear(n_hidden, 2)
 
-        self.init_hidden(batch_size)
-
     def forward(self, data, lens):
-        if data.shape[1] != self.batch_size:
-            self.init_hidden(data.shape[1])
+        self.init_hidden(data.shape[1])
 
         hidden_state = self.hidden_state
         cell_state = self.cell_state
@@ -64,7 +61,6 @@ def masked_mse_loss(preds, labels, data):
 
 
 def evaluate(model, ds, criterion, batch_size=1024):
-    model.init_hidden(batch_size)
 
     running_loss = 0
     n_batches = 0
@@ -82,8 +78,6 @@ def evaluate(model, ds, criterion, batch_size=1024):
 def train(model, optimizer, criterion, train_ds, val_ds, batch_size, epochs,
           epochs_between_evals=1):
     for epoch in range(1, epochs + 1):
-
-        model.init_hidden(batch_size)
 
         train_batches = get_batches(train_ds, batch_size)
         for data_batch, labels_batch, lens_batch in train_batches:
