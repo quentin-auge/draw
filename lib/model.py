@@ -98,10 +98,12 @@ def train(model, optimizer, criterion, train_ds, val_ds, batch_size, epochs,
 
 def generate(model, initial_points, n_points):
     preds = initial_points.unsqueeze(dim=1)
-    n_preds = len(initial_points)
+
+    if torch.cuda.is_available():
+        preds = preds.cuda()
 
     for _ in range(n_points):
-        new_preds = model(preds, [n_preds])
+        new_preds = model(preds, [len(preds)])
         new_pred = new_preds[-1].unsqueeze(dim=0)
         preds = torch.cat([preds, new_pred])
 
