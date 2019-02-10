@@ -122,7 +122,14 @@ def get_train_val_idxs(n_idxs, train_ratio=0.75, sample_ratio=1.0):
 
 def get_batches(ds, batch_size):
     dl = DataLoader(ds, batch_size)
+
     for data_batch, labels_batch, lens_batch in dl:
+
         data_batch = data_batch.transpose(0, 1)
         labels_batch = labels_batch.transpose(0, 1)
+
+        if torch.cuda.is_available():
+            data_batch = data_batch.cuda()
+            labels_batch = labels_batch.cuda()
+
         yield data_batch, labels_batch, lens_batch

@@ -7,7 +7,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from lib.dataset import PADDING_VALUE
 from lib.dataset import get_batches
 
-
 class LSTM(nn.Module):
     def __init__(self, batch_size, n_hidden, n_layers, dropout=0):
         super().__init__()
@@ -46,6 +45,10 @@ class LSTM(nn.Module):
     def init_hidden(self, batch_size):
         self.hidden_state = torch.zeros([self.n_layers, batch_size, self.n_hidden])
         self.cell_state = torch.zeros([self.n_layers, batch_size, self.n_hidden])
+
+        if torch.cuda.is_available():
+            self.hidden_state = self.hidden_state.cuda()
+            self.cell_state = self.cell_state.cuda()
 
 
 def masked_mse_loss(preds, labels, data):
