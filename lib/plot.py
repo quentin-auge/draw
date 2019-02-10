@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from lib.dataset import _cut_strokes, get_n_points
+from lib.dataset import cut_strokes, get_n_points
 
 
 def get_canvas(nrows=1, ncols=1, *args, **kwargs):
@@ -21,29 +21,29 @@ def get_canvas(nrows=1, ncols=1, *args, **kwargs):
     return fig, axs
 
 
-def plot(drawing, color='b', ax=None):
+def plot(strokes, color='b', ax=None):
     ax = ax or get_canvas()
 
     lines = []
-    for xs, ys in drawing:
+    for xs, ys in strokes:
         line, = ax.plot(xs, ys, color=color)
         lines.append(line)
 
     return lines
 
 
-def get_animation(drawing, color='b', interval=100, ax=None):
+def get_animation(strokes, color='b', interval=100, ax=None):
     ax = ax or get_canvas()[1]
-    lines = plot(drawing, color, ax)
+    lines = plot(strokes, color, ax)
 
     def update(i, strokes, lines):
-        strokes = _cut_strokes(strokes, i)
+        strokes = cut_strokes(strokes, i)
         for (xs, ys), line in zip(strokes, lines):
             line.set_data(xs, ys)
         return lines
 
-    n_frames = get_n_points(drawing) + 10
-    animation = FuncAnimation(ax.figure, update, fargs=[drawing, lines],
+    n_frames = get_n_points(strokes) + 10
+    animation = FuncAnimation(ax.figure, update, fargs=[strokes, lines],
                               frames=n_frames, interval=interval, blit=True)
 
     return animation

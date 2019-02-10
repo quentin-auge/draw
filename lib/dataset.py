@@ -1,6 +1,10 @@
 import struct
 from struct import unpack
 
+import numpy as np
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+
 
 def unpack_drawing(file_handle):
     key_id, = unpack('Q', file_handle.read(8))
@@ -34,12 +38,11 @@ def unpack_drawings(filename):
                 break
 
 
-def _cut_strokes(strokes, n_points):
+def cut_strokes(strokes, n_points):
     result_strokes = []
     current_n_points = 0
 
     for x, y in strokes:
-        assert len(x) == len(y)
         stroke_size = len(x)
         n_points_remaining = max(0, n_points - current_n_points)
         result_strokes.append((x[:n_points_remaining], y[:n_points_remaining]))
@@ -48,9 +51,78 @@ def _cut_strokes(strokes, n_points):
     return result_strokes
 
 
-def get_n_points(drawing):
+def get_n_points(strokes):
     n_points = 0
-    for x, y in drawing:
-        assert len(x) == len(y)
+    for x, y in strokes:
         n_points += len(x)
     return n_points
+
+
+END_OF_STROKE_VALUE = -1
+PADDING_VALUE = -2
+
+
+def strokes_to_points(strokes):
+    points = []
+    for xs, ys in strokes:
+        for x, y in zip(xs, ys):
+            points.append([x, y])
+        points.append([END_OF_STROKE_VALUE, END_OF_STROKE_VALUE])
+    return points
+
+
+def points_to_strokes(points):
+    strokes = []
+    stroke_x, stroke_y = [], []
+
+    for x, y in points:
+        if x != END_OF_STROKE_VALUE and y != END_OF_STROKE_VALUE:
+            stroke_x.append(x)
+            stroke_y.append(y)
+        else:
+            strokes.append((stroke_x, stroke_y))
+            stroke_x, stroke_y = [], []
+
+    if stroke_x:
+        strokes.append((stroke_x, stroke_y))
+
+    return strokes
+
+
+def get_dataset(drawings):
+    ponts_drawings = list(map(strokes_to_points, drawings))
+    ponts_drawings = sorted(ponts_drawings, key=len, reverse=True)
+    n_drawings = len(drawings)
+
+    lens = list(map(len, ponts_drawings))
+    max_len = max(lens)
+    lens = torch.IntTensor(lens)
+
+    data = torch.ones((n_drawings, max_len, 2)).float() * PADDING_VALUE
+    for i, flat_drawing in enumerate(ponts_drawings):
+        data[i, :len(flat_drawing), :] = torch.Tensor(flat_drawing)
+
+    labels = data[1:]
+    data = data[:-1]
+    lens = lens[:-1]
+
+    return TensorDataset(data, labels, lens)
+
+
+def get_train_val_idxs(n_idxs, train_ratio=0.75, sample_ratio=1.0):
+    train_idxs, val_idxs = [], []
+    for i in range(n_idxs):
+        if np.random.rand() <= sample_ratio:
+            if np.random.rand() <= train_ratio:
+                train_idxs.append(i)
+            else:
+                val_idxs.append(i)
+    return train_idxs, val_idxs
+
+
+def get_batches(ds, batch_size):
+    dl = DataLoader(ds, batch_size)
+    for data_batch, labels_batch, lens_batch in dl:
+        data_batch = data_batch.transpose(0, 1)
+        labels_batch = labels_batch.transpose(0, 1)
+        yield data_batch, labels_batch, lens_batch
