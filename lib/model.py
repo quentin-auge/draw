@@ -7,6 +7,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from lib.dataset import END_OF_STROKE_VALUE, PADDING_VALUE
 from lib.dataset import get_batches
 
+
 class LSTM(nn.Module):
     def __init__(self, batch_size, n_hidden, n_layers, dropout=0):
         super().__init__()
@@ -61,7 +62,6 @@ def masked_mse_loss(preds, labels, data):
 
 
 def evaluate(model, ds, criterion, batch_size=1024):
-
     running_loss = 0
     n_batches = 0
 
@@ -75,8 +75,16 @@ def evaluate(model, ds, criterion, batch_size=1024):
     return running_loss / n_batches
 
 
-def train(model, optimizer, criterion, train_ds, val_ds, batch_size, epochs,
+def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size, epochs,
           epochs_between_evals=1):
+
+    if isinstance(scheduler_or_optimizer, torch.optim.Optimizer):
+        optimizer = scheduler_or_optimizer
+        scheduler = None
+    else:
+        scheduler = scheduler_or_optimizer
+        optimizer = scheduler.optimizer
+
     for epoch in range(1, epochs + 1):
 
         train_batches = get_batches(train_ds, batch_size)
@@ -87,9 +95,13 @@ def train(model, optimizer, criterion, train_ds, val_ds, batch_size, epochs,
             loss.backward()
             optimizer.step()
 
+        train_loss = evaluate(model, train_ds, criterion, batch_size)
+        val_loss = evaluate(model, val_ds, criterion, batch_size)
+
+        if scheduler:
+            scheduler.step(val_loss)
+
         if epoch == 1 or epoch % epochs_between_evals == 0 or epoch == epochs:
-            train_loss = evaluate(model, train_ds, criterion, batch_size)
-            val_loss = evaluate(model, val_ds, criterion, batch_size)
             print(f'epoch: {epoch:3d}   train_loss: {train_loss:.2f}   val_loss: {val_loss:.2f}')
 
 
