@@ -4,20 +4,20 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from lib.dataset import END_OF_STROKE_VALUE, PADDING_VALUE
+from lib.dataset import PADDING_VALUE
 from lib.dataset import get_batches
 
 
 class LSTM(nn.Module):
-    def __init__(self, batch_size, n_hidden, n_layers, dropout=0):
+    def __init__(self, batch_size, n_input_dim, n_hidden, n_layers, dropout=0):
         super().__init__()
 
         self.batch_size = batch_size
         self.n_layers = n_layers
         self.n_hidden = n_hidden
 
-        self.lstm = nn.LSTM(2, n_hidden, n_layers, dropout=dropout)
-        self.output_weights = nn.Linear(n_hidden, 2)
+        self.lstm = nn.LSTM(n_input_dim, n_hidden, n_layers, dropout=dropout)
+        self.output_weights = nn.Linear(n_hidden, n_input_dim)
 
     def forward(self, data, lens):
         self.init_hidden(data.shape[1])
@@ -36,7 +36,7 @@ class LSTM(nn.Module):
 
         output = self.output_weights(output)
 
-        output = torch.sigmoid(output) * END_OF_STROKE_VALUE
+        output = torch.sigmoid(output)
 
         return output
 
@@ -77,7 +77,6 @@ def evaluate(model, ds, criterion, batch_size=1024):
 
 def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size, epochs,
           epochs_between_evals=1):
-
     if isinstance(scheduler_or_optimizer, torch.optim.Optimizer):
         optimizer = scheduler_or_optimizer
         scheduler = None
@@ -105,8 +104,8 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size
             print(f'epoch: {epoch:3d}   train_loss: {train_loss:.2f}   val_loss: {val_loss:.2f}')
 
 
-def generate(model, initial_points, n_points):
-    preds = initial_points.unsqueeze(dim=1)
+def generate(model, start_of_stroke, n_points):
+    preds = torch.Tensor(start_of_stroke).unsqueeze(dim=1)
 
     if torch.cuda.is_available():
         preds = preds.cuda()
