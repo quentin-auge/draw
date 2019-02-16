@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from lib.dataset import cut_strokes, get_n_points
+from lib.strokes import cut_strokes, get_n_points
 
 
 def get_canvas(nrows=1, ncols=1, *args, **kwargs):
