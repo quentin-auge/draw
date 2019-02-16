@@ -1,4 +1,5 @@
 import abc
+import math
 
 from lib.unpack import unpack_drawings
 
@@ -157,8 +158,8 @@ class VectorsStrokesTransformer(StrokesTransformer):
         """
         if next_point is not None:
             x, y, *stroke_state = point
-            next_x, next_y, *_ = next_point
-            new_point = [next_x - x, next_y - y] + stroke_state
+            x_next, y_next, *_ = next_point
+            new_point = [x_next - x, y_next - y] + stroke_state
             return new_point
 
     def _inverse_transform(self, point, acc_point):
@@ -167,6 +168,31 @@ class VectorsStrokesTransformer(StrokesTransformer):
         delta_x, delta_y = point
         x, y = acc_point
         acc_point = (x + delta_x, y + delta_y)
+
+        return new_point, acc_point
+
+
+class PolarStrokesTransformer(StrokesTransformer):
+    def _transform(self, point, next_point):
+        """
+        Transformation: two-points -> polar-coordinates vector.
+        """
+        if next_point is not None:
+            x, y, *stroke_state = point
+            x_next, y_next, *_ = next_point
+            distance = math.sqrt((x_next - x) ** 2 + (y_next - y) ** 2)
+            angle = math.atan2(y_next - y, x_next - x)
+            new_point = [distance, angle] + stroke_state
+            return new_point
+
+    def _inverse_transform(self, point, acc_point):
+        new_point = acc_point
+
+        distance, angle = point
+        x, y = acc_point
+        x = int(x + distance * math.cos(angle))
+        y = int(y + distance * math.sin(angle))
+        acc_point = (x, y)
 
         return new_point, acc_point
 
@@ -201,6 +227,8 @@ def get_n_points(strokes):
 
 if __name__ == '__main__':
     from pprint import pprint
+    from matplotlib import pyplot as plt
+    from lib.plot import plot
 
     dataset = unpack_drawings('./data/The Eiffel Tower.bin')
     strokes = next(dataset)['image']
@@ -209,6 +237,7 @@ if __name__ == '__main__':
 
     transformer = PointsStrokesTransformer()
     transformer = VectorsStrokesTransformer()
+    transformer = PolarStrokesTransformer()
 
     transformed_strokes = transformer.transform(strokes)
     pprint(transformed_strokes)
@@ -216,3 +245,7 @@ if __name__ == '__main__':
     reconstructed_strokes = transformer.inverse_transform(transformed_strokes,
                                                           initial_point=(0, 218))
     pprint(reconstructed_strokes)
+
+    plot(strokes)
+    plot(reconstructed_strokes)
+    plt.show()
