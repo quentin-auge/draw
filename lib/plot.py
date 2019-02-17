@@ -24,9 +24,15 @@ def get_drawing_dims(strokes):
     Get drawing bounding box: [min_x, max_x], [min_y, max_y].
     """
 
-    min_x, min_y = np.inf, np.inf
-    max_x, max_y = -np.inf, -np.inf
+    INF = np.inf
+    min_x, min_y = INF, INF
+    max_x, max_y = -INF, -INF
+
     for xs, ys in strokes:
+
+        if not xs or not ys:
+            break
+
         min_x = min(min(xs), min_x)
         max_x = max(max(xs), max_x)
         min_y = min(min(ys), min_y)

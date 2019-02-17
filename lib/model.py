@@ -61,11 +61,11 @@ def masked_mse_loss(preds, labels, data):
     return F.mse_loss(flat_preds[mask], flat_labels[mask])
 
 
-def evaluate(model, ds, criterion, batch_size=1024):
+def evaluate(model, criterion, ds, mean_stds, batch_size=1024):
     running_loss = 0
     n_batches = 0
 
-    batches = get_batches(ds, batch_size)
+    batches = get_batches(ds, mean_stds, batch_size)
     for data_batch, labels_batch, lens_batch in batches:
         preds_batch = model(data_batch, lens_batch)
         loss = criterion(preds_batch, labels_batch, data_batch)
@@ -75,8 +75,9 @@ def evaluate(model, ds, criterion, batch_size=1024):
     return running_loss / n_batches
 
 
-def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size, epochs,
-          epochs_between_evals=1):
+def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
+          train_means_stds, val_means_stds,
+          batch_size, epochs, epochs_between_evals=1):
     if isinstance(scheduler_or_optimizer, torch.optim.Optimizer):
         optimizer = scheduler_or_optimizer
         scheduler = None
@@ -86,7 +87,7 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size
 
     for epoch in range(1, epochs + 1):
 
-        train_batches = get_batches(train_ds, batch_size)
+        train_batches = get_batches(train_ds, train_means_stds, batch_size)
         for data_batch, labels_batch, lens_batch in train_batches:
             preds_batch = model(data_batch, lens_batch)
             optimizer.zero_grad()
@@ -94,8 +95,8 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size
             loss.backward()
             optimizer.step()
 
-        train_loss = evaluate(model, train_ds, criterion, batch_size)
-        val_loss = evaluate(model, val_ds, criterion, batch_size)
+        train_loss = evaluate(model, criterion, train_ds, train_means_stds, batch_size)
+        val_loss = evaluate(model, criterion, val_ds, val_means_stds, batch_size)
 
         if scheduler:
             scheduler.step(val_loss)
@@ -105,7 +106,7 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds, batch_size
 
 
 def generate(model, start_of_stroke, n_points):
-    preds = torch.Tensor(start_of_stroke).unsqueeze(dim=1)
+    preds = start_of_stroke
 
     if torch.cuda.is_available():
         preds = preds.cuda()
@@ -115,6 +116,6 @@ def generate(model, start_of_stroke, n_points):
         new_pred = new_preds[-1].unsqueeze(dim=0)
         preds = torch.cat([preds, new_pred])
 
-    preds = preds.int().squeeze().tolist()
+    preds = preds.squeeze()
 
     return preds
