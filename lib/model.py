@@ -68,6 +68,8 @@ def get_classif_loss(preds, labels):
     masked_labels = labels[labels != PADDING_VALUE]
     masked_preds = preds[labels != PADDING_VALUE]
 
+    return F.mse_loss(masked_preds, masked_labels)
+
     return (1 - masked_preds[masked_labels == 1]).mean()
 
 
@@ -126,7 +128,7 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
         val_loss = val_reg_loss + val_classif_loss
 
         if scheduler:
-            scheduler.step(train_loss)
+            scheduler.step(val_loss)
 
         if epoch == 1 or epoch % epochs_between_evals == 0 or epoch == epochs:
             loss_ratio = (train_reg_loss + val_reg_loss) / (train_classif_loss + val_classif_loss)
