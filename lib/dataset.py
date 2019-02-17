@@ -37,13 +37,13 @@ def get_train_val_idxs(n_idxs, train_ratio=0.75, sample_ratio=1.0):
     return train_idxs, val_idxs
 
 
-def get_means_stds(ds):
+def get_means_stds(ds, sigmas=1):
     means_stds = []
 
     for dim in (0, 1):
         v = ds.dataset.tensors[0][ds.indices][:, :, dim]
         mean = v[v != PADDING_VALUE].mean().item()
-        std = v[v != PADDING_VALUE].std().item()
+        std = v[v != PADDING_VALUE].std().item() * sigmas
         means_stds.append((mean, std))
 
     return tuple(means_stds)
