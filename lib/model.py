@@ -8,31 +8,61 @@ from lib.dataset import PADDING_VALUE
 from lib.dataset import get_batches
 
 
-class LSTM(nn.Module):
-    def __init__(self, batch_size, n_hidden, n_layers, dropout=0):
+class EncoderDecoder(nn.Module):
+    def __init__(self, batch_size, n_hidden):
+        super().__init__()
+        self.encoder = Encoder(batch_size, n_hidden)
+        self.decoder = Decoder(batch_size, n_hidden)
+
+    def forward(self, data, lens):
+        states = self.encoder(data, lens)
+        output, _ = self.decoder(data, lens, encoder_states=states)
+        return output
+
+
+class Encoder(nn.Module):
+    def __init__(self, batch_size, n_hidden, n_layers=1):
         super().__init__()
 
         self.batch_size = batch_size
         self.n_layers = n_layers
         self.n_hidden = n_hidden
 
-        self.lstm = nn.LSTM(5, n_hidden, n_layers, dropout=dropout)
-        self.output_weights = nn.Linear(n_hidden, 5)
+        self.lstm = nn.LSTM(5, n_hidden, n_layers)
+
+        self.states = None
 
     def forward(self, data, lens):
-        self.init_hidden(data.shape[1])
+        packed_data = pack_padded_sequence(data, lens)
+        packed_output, states = self.lstm(packed_data)
+        output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
+        self.states = states
+        return states
 
-        hidden_state = self.hidden_state
-        cell_state = self.cell_state
+
+class Decoder(nn.Module):
+    def __init__(self, batch_size, n_hidden, n_layers=1):
+        super().__init__()
+
+        self.batch_size = batch_size
+        self.n_layers = n_layers
+        self.n_hidden = n_hidden
+
+        #self.hidden_bridge = nn.Linear(n_hidden, n_hidden)
+        #self.cell_bridge = nn.Linear(n_hidden, n_hidden)
+        self.lstm = nn.LSTM(5, n_hidden, n_layers)
+        self.output_weights = nn.Linear(n_hidden, 5)
+
+    def forward(self, data, lens, states=None, encoder_states=None):
+
+        if not states and encoder_states:
+            #hidden_state = torch.tanh(self.hidden_bridge(encoder_states[0]))
+            #cell_state = torch.tanh(self.cell_bridge(encoder_states[1]))
+            states = encoder_states
 
         packed_data = pack_padded_sequence(data, lens)
-        packed_output, (hidden_state, cell_state) = self.lstm(packed_data,
-                                                              (hidden_state, cell_state))
+        packed_output, states = self.lstm(packed_data, states)
         output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
-
-        # Throw away states history
-        self.hidden_state = Variable(hidden_state)
-        self.cell_state = Variable(cell_state)
 
         output = self.output_weights(output)
 
@@ -40,15 +70,7 @@ class LSTM(nn.Module):
                             F.softmax(output[:, :, 2:], dim=-1)],
                            dim=2)
 
-        return output
-
-    def init_hidden(self, batch_size):
-        self.hidden_state = torch.zeros([self.n_layers, batch_size, self.n_hidden])
-        self.cell_state = torch.zeros([self.n_layers, batch_size, self.n_hidden])
-
-        if torch.cuda.is_available():
-            self.hidden_state = self.hidden_state.cuda()
-            self.cell_state = self.cell_state.cuda()
+        return output, states
 
 
 def get_reg_loss(preds, labels):
@@ -70,7 +92,7 @@ def get_classif_loss(preds, labels):
 
     return F.mse_loss(masked_preds, masked_labels)
 
-    return (1 - masked_preds[masked_labels == 1]).mean()
+    #return (1 - masked_preds[masked_labels == 1]).mean()
 
 
 def get_loss(preds, labels):
@@ -134,19 +156,24 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
             loss_ratio = (train_reg_loss + val_reg_loss) / (train_classif_loss + val_classif_loss)
 
             print(f'epoch: {epoch:3d}'
-                  f'   train_loss: {train_loss:.2f}'
-                  f'   val_loss: {val_loss:.2f}'
+                  f'   train_loss: {train_loss:.5f}'
+                  f'   val_loss: {val_loss:.5f}'
                   f'         reg_classif_loss_ratio: {loss_ratio:.2f}')
 
 
 def generate(model, start_of_stroke, n_points):
+
+    decoder = model.decoder
+    encoder = model.encoder
+
     preds = start_of_stroke
+    encoder_states = encoder(start_of_stroke, [len(start_of_stroke)])
 
     if torch.cuda.is_available():
         preds = preds.cuda()
 
     for _ in range(n_points):
-        new_preds = model(preds, [len(preds)])
+        new_preds, states = decoder(preds, [len(preds)], encoder_states)
         new_pred = new_preds[-1].unsqueeze(dim=0)
         preds = torch.cat([preds, new_pred])
 
