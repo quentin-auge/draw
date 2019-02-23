@@ -26,18 +26,16 @@ class Encoder(nn.Module):
 
         self.batch_size = batch_size
         self.n_layers = n_layers
-        self.n_hidden = n_hidden
 
-        self.lstm = nn.LSTM(5, n_hidden, n_layers)
-
-        self.states = None
+        self.lstm = nn.LSTM(5, n_hidden, n_layers, bidirectional=False)
 
     def forward(self, data, lens):
         packed_data = pack_padded_sequence(data, lens)
-        packed_output, states = self.lstm(packed_data)
-        output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
-        self.states = states
-        return states
+        packed_output, (hidden_state, cell_state) = self.lstm(packed_data)
+        #output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
+        #hidden_state = torch.cat([hidden_state[0], hidden_state[1]], dim=-1).unsqueeze(dim=0)
+        #cell_state = torch.cat([cell_state[0], cell_state[1]], dim=-1).unsqueeze(dim=0)
+        return hidden_state, cell_state
 
 
 class Decoder(nn.Module):
@@ -46,19 +44,18 @@ class Decoder(nn.Module):
 
         self.batch_size = batch_size
         self.n_layers = n_layers
-        self.n_hidden = n_hidden
 
-        #self.hidden_bridge = nn.Linear(n_hidden, n_hidden)
-        #self.cell_bridge = nn.Linear(n_hidden, n_hidden)
+        self.hidden_bridge = nn.Linear(n_hidden, n_hidden)
+        self.cell_bridge = nn.Linear(n_hidden, n_hidden)
         self.lstm = nn.LSTM(5, n_hidden, n_layers)
         self.output_weights = nn.Linear(n_hidden, 5)
 
     def forward(self, data, lens, states=None, encoder_states=None):
 
         if not states and encoder_states:
-            #hidden_state = torch.tanh(self.hidden_bridge(encoder_states[0]))
-            #cell_state = torch.tanh(self.cell_bridge(encoder_states[1]))
-            states = encoder_states
+            hidden_state = torch.tanh(self.hidden_bridge(encoder_states[0]))
+            cell_state = torch.tanh(self.cell_bridge(encoder_states[1]))
+            states = hidden_state, cell_state
 
         packed_data = pack_padded_sequence(data, lens)
         packed_output, states = self.lstm(packed_data, states)
@@ -173,7 +170,7 @@ def generate(model, start_of_stroke, n_points):
         preds = preds.cuda()
 
     for _ in range(n_points):
-        new_preds, states = decoder(preds, [len(preds)], encoder_states)
+        new_preds, states = decoder(preds, [len(preds)], encoder_states=encoder_states)
         new_pred = new_preds[-1].unsqueeze(dim=0)
         preds = torch.cat([preds, new_pred])
 
