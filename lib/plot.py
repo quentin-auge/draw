@@ -48,8 +48,8 @@ def resize_strokes(strokes):
 
     (min_x, max_x), (min_y, max_y) = get_drawing_dims(strokes)
 
-    range_x = max_x - min_x
-    range_y = max_y - min_y
+    range_x = (max_x - min_x) or 1
+    range_y = (max_y - min_y) or 1
 
     resized_strokes = []
     for xs, ys in strokes:
