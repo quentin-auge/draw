@@ -27,14 +27,14 @@ class Encoder(nn.Module):
         self.batch_size = batch_size
         self.n_layers = n_layers
 
-        self.lstm = nn.LSTM(5, n_hidden, n_layers, bidirectional=False)
+        self.lstm = nn.LSTM(5, n_hidden, n_layers, bidirectional=True)
 
     def forward(self, data, lens):
         packed_data = pack_padded_sequence(data, lens)
         packed_output, (hidden_state, cell_state) = self.lstm(packed_data)
-        #output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
-        #hidden_state = torch.cat([hidden_state[0], hidden_state[1]], dim=-1).unsqueeze(dim=0)
-        #cell_state = torch.cat([cell_state[0], cell_state[1]], dim=-1).unsqueeze(dim=0)
+        output, _ = pad_packed_sequence(packed_output, padding_value=PADDING_VALUE)
+        hidden_state = torch.cat([hidden_state[0], hidden_state[1]], dim=-1).unsqueeze(dim=0)
+        cell_state = torch.cat([cell_state[0], cell_state[1]], dim=-1).unsqueeze(dim=0)
         return hidden_state, cell_state
 
 
@@ -45,8 +45,8 @@ class Decoder(nn.Module):
         self.batch_size = batch_size
         self.n_layers = n_layers
 
-        self.hidden_bridge = nn.Linear(n_hidden, n_hidden)
-        self.cell_bridge = nn.Linear(n_hidden, n_hidden)
+        self.hidden_bridge = nn.Linear(2 * n_hidden, n_hidden)
+        self.cell_bridge = nn.Linear(2 * n_hidden, n_hidden)
         self.lstm = nn.LSTM(5, n_hidden, n_layers)
         self.output_weights = nn.Linear(n_hidden, 5)
 
@@ -165,9 +165,6 @@ def generate(model, start_of_stroke, n_points):
 
     preds = start_of_stroke
     encoder_states = encoder(start_of_stroke, [len(start_of_stroke)])
-
-    if torch.cuda.is_available():
-        preds = preds.cuda()
 
     for _ in range(n_points):
         new_preds, states = decoder(preds, [len(preds)], encoder_states=encoder_states)
