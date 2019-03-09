@@ -3,7 +3,7 @@ import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-PADDING_VALUE = 1024
+PADDING_VALUE = 0
 
 
 def get_dataset(transformed_drawings):
