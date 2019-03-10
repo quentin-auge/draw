@@ -76,20 +76,24 @@ class Decoder(nn.Module):
         sigma_y = sigma_y.exp()
         rho_xy = rho_xy.tanh()
 
-        mu_x = mu_x.unsqueeze(-1)
-        mu_y = mu_y.unsqueeze(-1)
-        sigma_x = sigma_x.unsqueeze(-1)
-        sigma_y = sigma_y.unsqueeze(-1)
-        rho_xy = rho_xy.unsqueeze(-1)
+        gmm_params = pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy
 
-        mu = torch.cat([mu_x, mu_y], dim=-1)
+        return gmm_params, state_params, states
 
-        sigma_xy = sigma_x * sigma_y
-        upper_row_cov = torch.cat([sigma_x ** 2, rho_xy * sigma_xy], dim=-1).unsqueeze(-2)
-        lower_row_cov = torch.cat([rho_xy * sigma_xy, sigma_y ** 2], dim=-1).unsqueeze(-2)
-        cov = torch.cat([upper_row_cov, lower_row_cov], dim=-2)
-
-        return (pi, mu, cov), state_params, states
+        # mu_x = mu_x.unsqueeze(-1)
+        # mu_y = mu_y.unsqueeze(-1)
+        # sigma_x = sigma_x.unsqueeze(-1)
+        # sigma_y = sigma_y.unsqueeze(-1)
+        # rho_xy = rho_xy.unsqueeze(-1)
+        #
+        # mu = torch.cat([mu_x, mu_y], dim=-1)
+        #
+        # sigma_xy = sigma_x * sigma_y
+        # upper_row_cov = torch.cat([sigma_x ** 2, rho_xy * sigma_xy], dim=-1).unsqueeze(-2)
+        # lower_row_cov = torch.cat([rho_xy * sigma_xy, sigma_y ** 2], dim=-1).unsqueeze(-2)
+        # cov = torch.cat([upper_row_cov, lower_row_cov], dim=-2)
+        # #
+        # # return (pi, mu, cov), state_params, states
 
 
 # def get_reg_loss(preds, labels):
@@ -126,8 +130,8 @@ def evaluate(model, criterion, ds, mean_stds, batch_size=1024):
 
     batches = get_batches(ds, mean_stds, batch_size)
     for data_batch, labels_batch, lens_batch in batches:
-        (pi, mu, cov), param_states, _ = model(data_batch, lens_batch)
-        loss = criterion(pi, mu, cov, param_states, labels_batch, lens_batch)
+        gmm_params, param_states, _ = model(data_batch, lens_batch)
+        loss = criterion(gmm_params, param_states, labels_batch, lens_batch)
         running_loss += loss.item()
         n_batches += 1
 
@@ -150,9 +154,9 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
 
         train_batches = get_batches(train_ds, train_means_stds, batch_size)
         for data_batch, labels_batch, lens_batch in train_batches:
-            (pi, mu, cov), param_states, _ = model(data_batch, lens_batch)
+            gmm_params, param_states, _ = model(data_batch, lens_batch)
             optimizer.zero_grad()
-            loss = criterion(pi, mu, cov, param_states, labels_batch, lens_batch)
+            loss = criterion(gmm_params, param_states, labels_batch, lens_batch)
             loss.backward()
             optimizer.step()
 
