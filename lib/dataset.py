@@ -59,7 +59,7 @@ def get_batches(ds, means_stds, batch_size):
 
 def create_length_mask(data, lengths):
     """
-    Create a lengths mask for data along one dimension.
+    Create lengths mask for data along one dimension.
     """
     n_sequences, max_length, _ = data.shape
     lengths_mask = torch.zeros(n_sequences, max_length)
