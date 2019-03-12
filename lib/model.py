@@ -149,9 +149,6 @@ def extract_start_of_stroke(val_ds, n_points=1):
     # Size of start_of_stroke: n_points * 1 * 5 (1 -> batch_size, n_points -> sequence_length)
     start_of_stroke = start_of_stroke.transpose(0, 1)
 
-    if torch.cuda.is_available():
-        start_of_stroke = start_of_stroke.cuda()
-
     return start_of_stroke
 
 
