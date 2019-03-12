@@ -49,7 +49,7 @@ class Decoder(nn.Module):
         self.lstm = nn.LSTM(5, dim_hidden)
         self.output_weights = nn.Linear(dim_hidden, 6 * n_gaussians + 3)
 
-    def forward(self, data, lengths, lstm_states=None):
+    def forward(self, data, lengths, lstm_states=None, temperature=1.0):
         # if not states and encoder_states:
         #    hidden_state = torch.tanh(self.hidden_bridge(encoder_states[0]))
         #    cell_state = torch.tanh(self.cell_bridge(encoder_states[1]))
@@ -70,9 +70,9 @@ class Decoder(nn.Module):
 
         pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy = gmm_params.split(self.n_gaussians, dim=-1)
 
-        pi = pi.softmax(dim=-1)
-        sigma_x = sigma_x.exp()
-        sigma_y = sigma_y.exp()
+        pi = (pi / temperature).softmax(dim=-1)
+        sigma_x = sigma_x.exp() * temperature ** 2
+        sigma_y = sigma_y.exp() * temperature ** 2
         rho_xy = rho_xy.tanh()
 
         # Shape of each of gmm_params: max_sequence_length_in_batch * batch_size * n_gaussians
@@ -155,14 +155,15 @@ def extract_start_of_stroke(val_ds, n_points=1):
     return start_of_stroke
 
 
-def generate(model, start_of_stroke, n_points):
+def generate(model, start_of_stroke, n_points, temperature=1.0):
     last_preds = start_of_stroke
 
     preds = [last_preds]
     states = None
     for _ in range(n_points):
         with torch.no_grad():
-            gmm_params, strokes_state_params, states = model(last_preds, [len(last_preds)], states)
+            gmm_params, strokes_state_params, states = model(last_preds, [len(last_preds)],
+                                                             states, temperature)
             last_gmm_params = [param[-1] for param in gmm_params]
         last_preds = sample(last_gmm_params, strokes_state_params)
         last_preds = last_preds.unsqueeze(0)
