@@ -64,15 +64,15 @@ class Decoder(nn.Module):
 
         # Shape of strokes_state_params: max_sequence_length_in_batch * batch_size * 3
         strokes_state_params = all_params[-1]
-        strokes_state_params = strokes_state_params.softmax(dim=-1)
+        strokes_state_params = (strokes_state_params / temperature).softmax(dim=-1)
 
         gmm_params = torch.cat(all_params[:-1], dim=-1)
 
         pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy = gmm_params.split(self.n_gaussians, dim=-1)
 
         pi = (pi / temperature).softmax(dim=-1)
-        sigma_x = sigma_x.exp() * temperature ** 2
-        sigma_y = sigma_y.exp() * temperature ** 2
+        sigma_x = sigma_x.exp() * np.sqrt(temperature)
+        sigma_y = sigma_y.exp() * np.sqrt(temperature)
         rho_xy = rho_xy.tanh()
 
         # Shape of each of gmm_params: max_sequence_length_in_batch * batch_size * n_gaussians
