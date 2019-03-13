@@ -1,3 +1,5 @@
+from functools import partial
+
 import numpy as np
 import torch
 from torch import nn
@@ -9,52 +11,48 @@ from lib.dataset import get_batches
 from .dataset import get_means_stds, standarize_data
 
 
-class EncoderDecoder(nn.Module):
-    def __init__(self, n_hidden):
-        super().__init__()
-        self.encoder = Encoder(n_hidden)
-        self.decoder = Decoder(n_hidden)
-
-    def forward(self, data, lengths):
-        states = self.encoder(data, lengths)
-        output, _ = self.decoder(data, lengths, encoder_states=states)
-        return output
-
-
 class Encoder(nn.Module):
-    def __init__(self, n_hidden, n_layers=1):
+    def __init__(self, dim_input, dim_hidden, dim_latent, bidirectional=True):
         super().__init__()
 
-        self.n_layers = n_layers
+        self.dim_latent = dim_latent
 
-        self.lstm = nn.LSTM(5, n_hidden, n_layers, bidirectional=True)
+        self.lstm = nn.LSTM(dim_input, dim_hidden, bidirectional=bidirectional)
+
+        dim_hidden_out = dim_hidden * 2 if bidirectional else dim_hidden
+        self.mu = nn.Linear(dim_hidden_out, dim_latent)
+        self.sigma = nn.Linear(dim_hidden_out, dim_latent)
 
     def forward(self, data, lengths):
         packed_data = pack_padded_sequence(data, lengths)
-        packed_output, (hidden_state, cell_state) = self.lstm(packed_data)
+        packed_output, (hidden_state, _) = self.lstm(packed_data)
         output, _ = pad_packed_sequence(packed_output, padding_value=0)
-        hidden_state = torch.cat([hidden_state[0], hidden_state[1]], dim=-1).unsqueeze(dim=0)
-        cell_state = torch.cat([cell_state[0], cell_state[1]], dim=-1).unsqueeze(dim=0)
-        return hidden_state, cell_state
+
+        # Split forward and backward hidden states, each of shape 1 * batch_size * dim_hidden
+        fwd_hidden_state, bwd_hidden_state = torch.split(hidden_state, 1, dim=0)
+        # Put them back as tensor of shape 1 * batch_size * (2 * dim_hidden)
+        hidden_state = torch.cat([fwd_hidden_state, bwd_hidden_state], dim=-1)
+
+        mu = self.mu(hidden_state)
+        sigma_hat = self.sigma(hidden_state)
+        sigma = (sigma_hat / 2).exp()
+
+        z = torch.normal(mu, sigma)
+
+        return z, mu, sigma_hat
 
 
 class Decoder(nn.Module):
-    def __init__(self, dim_hidden, n_gaussians):
+    def __init__(self, dim_input, dim_hidden, n_gaussians):
         super().__init__()
 
+        self.dim_hidden = dim_hidden
         self.n_gaussians = n_gaussians
 
-        # self.hidden_bridge = nn.Linear(2 * n_hidden, n_hidden)
-        # self.cell_bridge = nn.Linear(2 * n_hidden, n_hidden)
-        self.lstm = nn.LSTM(5, dim_hidden)
+        self.lstm = nn.LSTM(dim_input, dim_hidden)
         self.output_weights = nn.Linear(dim_hidden, 6 * n_gaussians + 3)
 
     def forward(self, data, lengths, lstm_states=None, temperature=1.0):
-        # if not states and encoder_states:
-        #    hidden_state = torch.tanh(self.hidden_bridge(encoder_states[0]))
-        #    cell_state = torch.tanh(self.cell_bridge(encoder_states[1]))
-        #    states = hidden_state, cell_state
-
         packed_data = pack_padded_sequence(data, lengths)
         packed_output, lstm_states = self.lstm(packed_data, lstm_states)
         output, _ = pad_packed_sequence(packed_output, padding_value=0)
@@ -79,6 +77,38 @@ class Decoder(nn.Module):
         gmm_params = pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy
 
         return gmm_params, strokes_state_params, lstm_states
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(self, encoder, decoder):
+        super().__init__()
+        self.encoder = encoder
+        self.bridge = nn.Linear(encoder.dim_latent, 2 * decoder.dim_hidden)
+        self.decoder = decoder
+
+    def forward(self, data, lengths):
+        encoder_out = self.encoder(data, lengths)
+        z, _, _ = encoder_out
+        decoder_data = self.get_decoder_data(data, z)
+        decoder_states = self.get_decoder_states(z)
+        decoder_out = self.decoder(decoder_data, lengths, decoder_states)
+        return decoder_out
+
+    def get_decoder_data(self, data, z):
+        # z: 1 * batch_size * n_latent
+        # z_repeated: max_sequence_length_in_dataset * batch_size * n_latent
+        z_repeated = z.repeat(len(data), 1, 1)
+
+        # data: max_sequence_length_in_dataset * batch_size * n_latent
+        # decoder_data: max_sequence_length_in_dataset * batch_size * (n_latent + 5)
+        decoder_data = torch.cat([data, z_repeated], dim=-1)
+
+        return decoder_data
+
+    def get_decoder_states(self, z):
+        decoder_states = torch.tanh(self.bridge(z))
+        decoder_states = decoder_states.split(self.decoder.dim_hidden, dim=-1)
+        return decoder_states
 
 
 def reconstruction_loss(gmm_params, strokes_state_params, labels_batch, lengths_batch):
@@ -152,19 +182,34 @@ def extract_start_of_stroke(val_ds, n_points=1):
     return start_of_stroke
 
 
-def generate(model, start_of_stroke, n_points, temperature=1.0):
-    last_preds = start_of_stroke
+def generate(model, initial_points, n_points, temperature=1.0):
 
-    preds = [last_preds]
-    states = None
+    if isinstance(model, EncoderDecoder):
+        # Conditional generation
+        z, _, _ = model.encoder(initial_points, [len(initial_points)])
+        decoder = model.decoder
+        get_decoder_data_func = partial(model.get_decoder_data, z=z)
+        decoder_states = model.get_decoder_states(z)
+    else:
+        # Unconditional generation
+        decoder = model
+        get_decoder_data_func = lambda data: data
+        decoder_states = None
+
+    point = initial_points
+    preds = [initial_points]
+
     for _ in range(n_points):
+        decoder_data = get_decoder_data_func(point)
+
         with torch.no_grad():
-            gmm_params, strokes_state_params, states = model(last_preds, [len(last_preds)],
-                                                             states, temperature)
+            out = decoder(decoder_data, [len(decoder_data)], decoder_states, temperature)
+            gmm_params, strokes_state_params, decoder_states = out
             last_gmm_params = [param[-1] for param in gmm_params]
-        last_preds = sample(last_gmm_params, strokes_state_params)
-        last_preds = last_preds.unsqueeze(0)
-        preds.append(last_preds)
+
+        point = sample(last_gmm_params, strokes_state_params)
+        point = point.unsqueeze(0)
+        preds.append(point)
 
     preds = torch.cat(preds).squeeze(1)
 
