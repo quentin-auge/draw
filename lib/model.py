@@ -8,7 +8,6 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from lib.dataset import get_batches
-from .dataset import get_means_stds, standarize_data
 
 
 class Encoder(nn.Module):
@@ -120,9 +119,7 @@ def reconstruction_loss(gmm_params, strokes_state_params, labels_batch, lengths_
     batch_size = labels_batch.shape[1]
     mask = torch.zeros(max_length, batch_size)
     for i, length in enumerate(lengths_batch):
-        # Labels sequences are shifted by -1 element compared to data sequences
-        length = length - 1
-        mask[:length + 1, i] = 1
+        mask[:length, i] = 1
 
     # Shape of labels_batch: max_sequence_length_in_dataset * batch_size * 5
     # Shape of stripped_labels_batch: max_sequence_length_in_batch * batch_size * 5
@@ -167,23 +164,7 @@ def bivariate_normal_pdf(x, y, mu_x, mu_y, sigma_x, sigma_y, rho_xy):
     return exp / norm
 
 
-def extract_start_of_stroke(val_ds, n_points=1):
-    idx = np.random.choice(len(val_ds))
-    flat_strokes = val_ds[idx][0].tolist()
-    start_of_stroke = flat_strokes[:n_points]
-    # Size of start_of_stroke: n_points * 5
-    start_of_stroke = torch.Tensor(start_of_stroke)
-    # Size of start_of_stroke: 1 * n_points * 5, required by `standarize_data`
-    start_of_stroke = start_of_stroke.unsqueeze(dim=0)
-    standarize_data(start_of_stroke, [n_points], get_means_stds(val_ds))
-    # Size of start_of_stroke: n_points * 1 * 5 (1 -> batch_size, n_points -> sequence_length)
-    start_of_stroke = start_of_stroke.transpose(0, 1)
-
-    return start_of_stroke
-
-
-def generate(model, initial_points, n_points, temperature=1.0):
-
+def generate(model, n_points, initial_points=None, temperature=1.0):
     if isinstance(model, EncoderDecoder):
         # Conditional generation
         z, _, _ = model.encoder(initial_points, [len(initial_points)])
@@ -195,6 +176,11 @@ def generate(model, initial_points, n_points, temperature=1.0):
         decoder = model
         get_decoder_data_func = lambda data: data
         decoder_states = None
+
+    initial_points = torch.Tensor([[[0, 0, 1, 0, 0]]]).float()
+
+    if torch.cuda.is_available():
+        initial_points = initial_points.cuda()
 
     point = initial_points
     preds = [initial_points]
@@ -260,8 +246,7 @@ def bivariate_normal_distribution(mu_x, mu_y, sigma_x, sigma_y, rho_xy):
 
 
 def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
-          train_means_stds, val_means_stds,
-          batch_size, epochs, epochs_between_evals=1):
+          train_stds, val_stds, batch_size, epochs, epochs_between_evals=1):
     if isinstance(scheduler_or_optimizer, torch.optim.Optimizer):
         optimizer = scheduler_or_optimizer
         scheduler = None
@@ -271,7 +256,7 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
 
     for epoch in range(1, epochs + 1):
 
-        train_batches = get_batches(train_ds, train_means_stds, batch_size)
+        train_batches = get_batches(train_ds, train_stds, batch_size)
         for data_batch, labels_batch, lengths_batch in train_batches:
             gmm_params, param_states, _ = model(data_batch, lengths_batch)
             optimizer.zero_grad()
@@ -279,8 +264,8 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
             loss.backward()
             optimizer.step()
 
-        train_loss = evaluate(model, criterion, train_ds, train_means_stds, batch_size)
-        val_loss = evaluate(model, criterion, val_ds, val_means_stds, batch_size)
+        train_loss = evaluate(model, criterion, train_ds, train_stds, batch_size)
+        val_loss = evaluate(model, criterion, val_ds, val_stds, batch_size)
 
         if scheduler:
             scheduler.step(val_loss)
@@ -291,11 +276,11 @@ def train(model, scheduler_or_optimizer, criterion, train_ds, val_ds,
                   f'   val_loss: {val_loss:.5f}')
 
 
-def evaluate(model, criterion, ds, mean_stds, batch_size=1024):
+def evaluate(model, criterion, ds, stds, batch_size=1024):
     running_loss = 0
     n_batches = 0
 
-    batches = get_batches(ds, mean_stds, batch_size)
+    batches = get_batches(ds, stds, batch_size)
     for data_batch, labels_batch, lengths_batch in batches:
         gmm_params, param_states, _ = model(data_batch, lengths_batch)
         loss = criterion(gmm_params, param_states, labels_batch, lengths_batch)
