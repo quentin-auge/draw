@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from torch.nn import functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -103,10 +102,6 @@ def standarize_data(data, lengths, stds):
 def unstandarize_flat_strokes(flat_strokes, stds):
     for dim, std in enumerate(stds):
         flat_strokes[:, dim] *= std
-
-    # Very low softmax temperature ensures all coefficients are roughly 0 except one
-    temperature = 1e-5
-    flat_strokes[:, 2:5] = F.softmax(flat_strokes[:, 2:5] / temperature, dim=1)
 
     flat_strokes = flat_strokes.round().int().tolist()
 
