@@ -51,7 +51,7 @@ class Decoder(nn.Module):
         self.lstm = nn.LSTM(dim_input, dim_hidden)
         self.output_weights = nn.Linear(dim_hidden, 6 * n_gaussians + 3)
 
-    def forward(self, data, lengths, lstm_states=None, temperature=1.0):
+    def forward(self, data, lengths, lstm_states=None, temperature_gmm=1.0, temperature_state=1.0):
         packed_data = pack_padded_sequence(data, lengths)
         packed_output, lstm_states = self.lstm(packed_data, lstm_states)
         output, _ = pad_packed_sequence(packed_output, padding_value=0)
@@ -61,15 +61,15 @@ class Decoder(nn.Module):
 
         # Shape of strokes_state_params: max_sequence_length_in_batch * batch_size * 3
         strokes_state_params = all_params[-1]
-        strokes_state_params = (strokes_state_params / temperature).softmax(dim=-1)
+        strokes_state_params = (strokes_state_params / temperature_state).softmax(dim=-1)
 
         gmm_params = torch.cat(all_params[:-1], dim=-1)
 
         pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy = gmm_params.split(self.n_gaussians, dim=-1)
 
-        pi = (pi / temperature).softmax(dim=-1)
-        sigma_x = sigma_x.exp() * np.sqrt(temperature)
-        sigma_y = sigma_y.exp() * np.sqrt(temperature)
+        pi = (pi / temperature_gmm).softmax(dim=-1)
+        sigma_x = sigma_x.exp() * np.sqrt(temperature_gmm)
+        sigma_y = sigma_y.exp() * np.sqrt(temperature_gmm)
         rho_xy = rho_xy.tanh()
 
         # Shape of each of gmm_params: max_sequence_length_in_batch * batch_size * n_gaussians
@@ -164,7 +164,7 @@ def bivariate_normal_pdf(x, y, mu_x, mu_y, sigma_x, sigma_y, rho_xy):
     return exp / norm
 
 
-def generate(model, n_points, initial_points=None, temperature=1.0):
+def generate(model, n_points, initial_points=None, temperature_gmm=1.0, temperature_state=1.0):
     if isinstance(model, EncoderDecoder):
         # Conditional generation
         z, _, _ = model.encoder(initial_points, [len(initial_points)])
@@ -189,7 +189,8 @@ def generate(model, n_points, initial_points=None, temperature=1.0):
         decoder_data = get_decoder_data_func(point)
 
         with torch.no_grad():
-            out = decoder(decoder_data, [len(decoder_data)], decoder_states, temperature)
+            out = decoder(decoder_data, [len(decoder_data)], decoder_states,
+                          temperature_gmm, temperature_state)
             gmm_params, strokes_state_params, decoder_states = out
             last_gmm_params = [param[-1] for param in gmm_params]
 
