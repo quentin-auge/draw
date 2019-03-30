@@ -23,9 +23,7 @@ class Encoder(nn.Module):
         self.sigma = nn.Linear(dim_hidden_out, dim_latent)
 
     def forward(self, data, lengths):
-        packed_data = pack_padded_sequence(data, lengths)
-        packed_output, (hidden_state, _) = self.lstm(packed_data)
-        output, _ = pad_packed_sequence(packed_output, padding_value=0)
+        output, hidden_state = self.lstm(data)
 
         # Split forward and backward hidden states, each of shape 1 * batch_size * dim_hidden
         fwd_hidden_state, bwd_hidden_state = torch.split(hidden_state, 1, dim=0)
@@ -52,9 +50,7 @@ class Decoder(nn.Module):
         self.output_weights = nn.Linear(dim_hidden, 6 * n_gaussians + 3)
 
     def forward(self, data, lengths, lstm_states=None, temperature_gmm=1.0, temperature_state=1.0):
-        packed_data = pack_padded_sequence(data, lengths)
-        packed_output, lstm_states = self.lstm(packed_data, lstm_states)
-        output, _ = pad_packed_sequence(packed_output, padding_value=0)
+        output, lstm_states = self.lstm(data, lstm_states)
 
         all_params = self.output_weights(output)
         all_params = all_params.split(6, -1)
@@ -115,8 +111,7 @@ def reconstruction_loss(gmm_params, strokes_state_params, labels_batch, lengths_
     n_gaussians = pi.shape[2]
 
     # Create lengths mask for predictions
-    max_length = lengths_batch.max()
-    batch_size = labels_batch.shape[1]
+    max_length, batch_size, _ = labels_batch.shape
     mask = torch.zeros(max_length, batch_size)
     for i, length in enumerate(lengths_batch):
         mask[:length, i] = 1
@@ -140,13 +135,13 @@ def reconstruction_loss(gmm_params, strokes_state_params, labels_batch, lengths_
     gmm_probas = (gaussian_probs * pi).sum(dim=-1)
     # Prevent zeroes from showing up in log
     gmm_probas += 1e-5
-    gmm_loss = -gmm_probas[mask == 1].log().mean()
+    gmm_loss = -gmm_probas[mask == 1].log().sum() / (max_length * batch_size)
 
     # Compute strokes state loss
 
     strokes_state = stripped_labels_batch[:, :, 2:]
     states_losses = (strokes_state * strokes_state_params.log()).sum(dim=-1)
-    strokes_states_loss = -states_losses[mask == 1].mean()
+    strokes_states_loss = -states_losses.sum() / (max_length * batch_size)
 
     # Full loss
 

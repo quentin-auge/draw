@@ -24,7 +24,7 @@ def get_dataset(transformed_drawings):
         # Set drawing points
         data[i, 1:len(flat_drawing) + 1, :] = torch.Tensor(flat_drawing)
         # Set artificial last drawing point
-        data[i, len(flat_drawing) + 1, :] = torch.Tensor([0, 0, 0, 0, 1]).float()
+        data[i, len(flat_drawing) + 1:, :] = torch.Tensor([0, 0, 0, 0, 1]).float()
 
     # For labels, discard the null point at the beginning of each drawing. Include the one
     # at the end.
