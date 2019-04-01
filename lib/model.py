@@ -49,7 +49,7 @@ class Decoder(nn.Module):
         self.lstm = nn.LSTM(dim_input, dim_hidden)
         self.output_weights = nn.Linear(dim_hidden, 6 * n_gaussians + 3)
 
-    def forward(self, data, lengths, lstm_states=None, temperature_gmm=1.0, temperature_state=1.0):
+    def forward(self, data, lengths, lstm_states=None):
         output, lstm_states = self.lstm(data, lstm_states)
 
         all_params = self.output_weights(output)
@@ -57,15 +57,15 @@ class Decoder(nn.Module):
 
         # Shape of strokes_state_params: max_sequence_length_in_batch * batch_size * 3
         strokes_state_params = all_params[-1]
-        strokes_state_params = (strokes_state_params / temperature_state).softmax(dim=-1)
+        strokes_state_params = (strokes_state_params).softmax(dim=-1)
 
         gmm_params = torch.cat(all_params[:-1], dim=-1)
 
         pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy = gmm_params.split(self.n_gaussians, dim=-1)
 
-        pi = (pi / temperature_gmm).softmax(dim=-1)
-        sigma_x = sigma_x.exp() * np.sqrt(temperature_gmm)
-        sigma_y = sigma_y.exp() * np.sqrt(temperature_gmm)
+        pi = pi.softmax(dim=-1)
+        sigma_x = sigma_x.exp()
+        sigma_y = sigma_y.exp()
         rho_xy = rho_xy.tanh()
 
         # Shape of each of gmm_params: max_sequence_length_in_batch * batch_size * n_gaussians
@@ -159,7 +159,8 @@ def bivariate_normal_pdf(x, y, mu_x, mu_y, sigma_x, sigma_y, rho_xy):
     return exp / norm
 
 
-def generate(model, n_points, initial_points=None, temperature_gmm=1.0, temperature_state=1.0):
+def generate(model, n_points, initial_points=None,
+             temperature_gmm=1.0, temperature_state=1.0, temperature_eos=1.0):
     if isinstance(model, EncoderDecoder):
         # Conditional generation
         z, _, _ = model.encoder(initial_points, [len(initial_points)])
@@ -184,12 +185,12 @@ def generate(model, n_points, initial_points=None, temperature_gmm=1.0, temperat
         decoder_data = get_decoder_data_func(point)
 
         with torch.no_grad():
-            out = decoder(decoder_data, [len(decoder_data)], decoder_states,
-                          temperature_gmm, temperature_state)
+            out = decoder(decoder_data, [len(decoder_data)], decoder_states)
             gmm_params, strokes_state_params, decoder_states = out
             last_gmm_params = [param[-1] for param in gmm_params]
 
-        point = sample(last_gmm_params, strokes_state_params)
+        point = sample(last_gmm_params, strokes_state_params,
+                       temperature_gmm, temperature_state, temperature_eos)
         point = point.unsqueeze(0)
         preds.append(point)
 
@@ -198,19 +199,40 @@ def generate(model, n_points, initial_points=None, temperature_gmm=1.0, temperat
     return preds
 
 
-def sample(gmm_params, strokes_state_params):
+def sample(gmm_params, strokes_state_params, temperature_gmm, temperature_state, temperature_eos):
     # Shape of each of gmm_params: batch_size * n_gaussians (output of LSTM for last sequence
     # element)
     pi, mu_x, mu_y, sigma_x, sigma_y, rho_xy = gmm_params
 
+    # Apply GMM temperature to sigmas
+    sigma_x *= np.sqrt(temperature_gmm)
+    sigma_y *= np.sqrt(temperature_gmm)
+
     gaussians = bivariate_normal_distribution(mu_x, mu_y, sigma_x, sigma_y, rho_xy)
     # Shape of gaussians_preds: batch_size * n_gaussians * 2
     gaussians_preds = gaussians.sample()
+
+    # Apply GMM temperature to pi
+    pi = pi.log()
+    pi -= pi.max()
+    pi /= temperature_gmm
+    pi = pi.softmax(dim=-1)
+
+    pi = Multinomial(1, pi).sample()
     # Shape of pi before: batch_size * n_gaussians
     # Shape of pi after: batch_size * n_gaussians * 2
     pi = pi.unsqueeze(dim=-1).repeat(1, 1, 2)
+
     # Shape of gmm_preds: batch_size * 2
     gmm_preds = (pi * gaussians_preds).sum(dim=-2)
+
+    strokes_state_params = strokes_state_params.log()
+    strokes_state_params -= strokes_state_params.max()
+    # Apply stroke state temperature
+    strokes_state_params[:, :, :2] /= temperature_state
+    # Apply end of stroke temperature
+    strokes_state_params[:, :, 2:] /= temperature_eos
+    strokes_state_params = strokes_state_params.softmax(dim=-1)
 
     # Shape of strokes_state_preds: batch_size * 3
     strokes_state_preds = Multinomial(1, strokes_state_params[-1]).sample()
