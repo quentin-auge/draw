@@ -5,7 +5,6 @@ import torch
 from torch import nn
 from torch.distributions.multinomial import Multinomial
 from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from lib.dataset import get_batches
 
