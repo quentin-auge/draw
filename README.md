@@ -1,7 +1,7 @@
 # Teaching a neural network to draw
 
 Starring Pytorch, LSTMs, GMMs, and negative log likelihood maximization.
-See the [companion blog post](http://quentin-auge.github.io/2019/04/21/teaching-a-neural-network-to-draw.html). 
+See the [companion blog post](http://quentin-auge.github.io/teaching-a-neural-network-to-draw.html). 
 
 <table style="border-collapse: collapse;">
     <tr>
