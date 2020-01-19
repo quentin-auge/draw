@@ -1,28 +1,28 @@
 # Teaching a neural network to draw
 
-An implementation of unconditional drawings generation using recurrent
-neural networks.
+Starring Pytorch, LSTMs, GMMs, and negative log likelihood maximization.
+See the [companion blog post](http://quentin-auge.github.io/teaching-a-neural-network-to-draw.html). 
 
-![](images/penguin.gif)
+<table style="border-collapse: collapse;">
+    <tr>
+      <td valign="middle"><img src="images/mixed.png" /></td>
+      <td valign="middle"><img src="images/penguin.gif" /></td>
+    </tr>
+</table>
 
-For further insights, see the accompanying blog post: [Teaching a Neural Network to Draw](http://quentin-auge.github.io/2019/04/21/teaching-a-neural-network-to-draw.html).
-
-The model follows the Google Brain paper
-[A Neural Representation of Sketch Drawings](https://arxiv.org/abs/1704.03477).
-
-The main entry point is the Jupyter notebook [unconditional.ipynb](unconditional.ipynb).
+See also:
+ * the reference [Google Brain paper](https://arxiv.org/abs/1704.03477)
+ * the [Jupyter notebook](unconditional.ipynb)
 
 # Data and models
 
-The dataset comes from [this repository](https://github.com/googlecreativelab/quickdraw-dataset).
-The simplified files in binary format are used. They are too big to be
-commited, but you can copy them to the `data/` subdirectory.
+The datasets come from [this repository](https://github.com/googlecreativelab/quickdraw-dataset) (simplified binary format).
+They are to be placed in `data/`.
 
-Serialized models are available in the `models/` subdirectory. They
-are single-layer LSTMs outputting parameters for a 20-normals GMM,
-with a hidden state size of either 128 or 512.
+Trained models are available in `models/`. They are single-layer
+Pytorch LSTMs outputting parameters for a 20-components GMM, with a
+hidden state size of either 128 or 512.
 
 # Setup
 
-The code runs with Python >= 3.6 and Pytorch >= 1.0.  
-The other requirements are listed in `requirements.txt`.
+The code runs with Python >= 3.6 and Pytorch >= 1.0. Other requirements are listed in `requirements.txt`.
